@@ -1,0 +1,28 @@
+:host {
+  position: relative;
+}
+
+#viewport0Container,
+#viewport1Container,
+#viewport2Container,
+#viewport3Container {
+  position: relative;
+  overflow: hidden;
+}
+
+#fullscreenContainer {
+  pointer-events: none;
+}
+#fullscreenContainer > * {
+  pointer-events: auto;
+}
+
+#viewport2Container,
+#viewport3Container {
+	margin-top: -1px;
+}
+
+#viewport1Container,
+#viewport3Container {
+	margin-left: -1px;
+}

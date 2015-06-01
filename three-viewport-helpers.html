@@ -1,0 +1,197 @@
+<link rel="import" href="../polymer/polymer.html">
+<link rel="import" href="../three-js/three-js.html">
+
+<!--
+Manages viewport helpers (grid and axis).
+
+@element three-viewport-helpers
+@blurb Manages viewport helpers (grid and axis).
+-->
+
+<polymer-element name="three-viewport-helpers">
+  <template></template>
+  <script type="text/javascript">
+
+      Polymer({
+        publish: {
+          /**
+           * Viewport helpers to be rendered in this viewport.
+           *
+           * @attribute scene
+           * @type object
+           * @default new THREE.Scene()
+           */
+          scene: null,
+          /**
+           * Orients the grid and intersection plane towards the camera view.
+           * Available settings: persp, top, bottom, front, back, left, right
+           * Changind this attribute will change the grid and intersection plane orientation
+           *
+           * @attribute view
+           * @type string
+           * @default null
+           */
+          view: null,
+          /**
+           * Determines if the grid is visible
+           *
+           * @attribute showGrid
+           * @type boolean
+           * @default true
+           */
+          showGrid: true,
+          /**
+           * Determines if the axis is visible
+           *
+           * @attribute showAxis
+           * @type boolean
+           * @default true
+           */
+          showAxis: true,
+          /**
+           * Determines the size of the grid cell 
+           *
+           * @attribute gridSize
+           * @type number
+           * @default 10
+           */
+          gridSize: 10,
+          /**
+           * Determines the total grid width 
+           *
+           * @attribute gridWidth
+           * @type number
+           * @default 10
+           */
+          gridWidth: 10,
+          /**
+           * Grid axis color
+           *
+           * @attribute gridColor1
+           * @type object
+           * @default new THREE.Color(0x111111)
+           */
+          gridColor1: null,
+          /**
+           * Grid color
+           *
+           * @attribute gridColor2
+           * @type object
+           * @default new THREE.Color(0xaaaaaa)
+           */
+          gridColor2: null
+        },
+
+        observe: {
+          'gridColor1.r gridColor1.g gridColor1.b': 'updateGrid',
+          'gridColor2.r gridColor2.g gridColor2.b': 'updateGrid',
+          'gridSize gridWidth': 'updateGrid'
+        },
+
+        scene: null,
+        grid: null,
+        plane: null,
+        axis: null,
+
+        ready: function() {
+          if (!this.scene) this.scene = new THREE.Scene();
+          if (!this.gridColor1) this.gridColor1 = new THREE.Color(0x111111);
+          if (!this.gridColor2) this.gridColor2 = new THREE.Color(0xaaaaaa);
+
+          this.grid = new THREE.GridHelper(this.gridSize * this.gridWidth, this.gridSize);
+          this.grid.setColors(this.gridColor1, this.gridColor2);
+          this.scene.add(this.grid);
+          this.grid.material.transparent = true;
+          this.grid.material.opacity = 0.5;
+          this.grid.material.depthWrite = false;
+
+          this.plane = new THREE.Mesh(
+              new THREE.PlaneBufferGeometry(1000000, 1000000, 2, 2),
+              new THREE.MeshBasicMaterial({side: THREE.DoubleSide})
+          );
+          this.plane.rotation.set(Math.PI / 2, 0, 0);
+          this.plane.material.transparent = true;
+          this.plane.material.opacity = 0;
+          this.plane.material.depthWrite = false;
+          this.scene.add(this.plane);
+
+          this.axis = new THREE.AxisHelper(10);
+          this.axis.traverse(function(child) {
+            if (child.material) child.material.depthTest = false;
+          });
+          this.scene.add(this.axis);
+
+
+          // compass is not part of the scene and it is rendered with its own camera
+          // because it needs to sit in the corner of the viewport and not have
+          // perspective distortion or be dependent on viewports field of view.
+          this.compass = new THREE.Object3D();
+          this.compass.scene = new THREE.Scene();
+          this.compass.axis = this.axis.clone();
+          this.compass.add(this.compass.axis);
+          this.compass.matrixAutoUpdate = false;
+          this.compass.scene.add(this.compass);
+          this.compass.camera = new THREE.PerspectiveCamera(10, 1, 0.01, 200);
+          this.compass.camera.position.z = 150;
+          this.compass.update = function(camera) {
+            this.matrix.extractRotation(camera.matrix);
+            this.matrix.getInverse(this.matrix);
+          }
+        },
+
+        viewChanged: function() {
+          switch (this.view) {
+            case 'top':
+            case 'bottom':
+            case 'persp':
+              // facing Y
+              this.grid.rotation.set(0, 0, 0);
+              this.plane.rotation.set(Math.PI / 2, 0, 0);
+              break;
+            case 'left':
+            case 'right':
+              // facing X
+              this.grid.rotation.set(0, 0, Math.PI / 2);
+              this.plane.rotation.set(0, Math.PI / 2, 0);
+              break;
+            case 'front':
+            case 'back':
+              // facing Z
+              this.grid.rotation.set(Math.PI / 2, 0, 0);
+              this.plane.rotation.set(0, 0, Math.PI / 2);
+              break;
+          }
+          // TODO: rename
+          this.fire('helper-changed', this.scene);
+        },
+
+        showGridChanged: function() {
+          this.grid.visible = this.showGrid;
+          this.fire('helper-changed', this.scene);
+        },
+        showAxisChanged: function() {
+          this.axis.visible = this.showAxis;
+          this.compass.visible = this.showAxis;
+          this.fire('helper-changed', this.scene);
+        },
+
+        updateGrid: function() {
+          var gridhelper = new THREE.GridHelper(this.gridSize * this.gridWidth, this.gridSize);
+          gridhelper.setColors(this.gridColor1, this.gridColor2);
+          this.grid.geometry = gridhelper.geometry;
+          this.grid.dispatchEvent({type: 'removed'});
+          this.grid.dispatchEvent({type: 'added'});
+          /**
+           * Fired when helper is changed
+           *
+           * @event helper-changed
+           * @param {Object} detail
+           * @param {Object} detail.scene helper scene
+           */
+          this.fire('helper-changed', this.scene);
+        }
+
+      });
+
+  </script>
+</polymer-element>

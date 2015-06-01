@@ -1,0 +1,46 @@
+<link rel="import" href="../polymer/polymer.html">
+<link rel="import" href="../three-js/three-js.html">
+
+<!--
+Viewport camera controller
+
+@element three-viewport-controls
+@blurb Viewport camera controller
+-->
+
+<polymer-element name="three-viewport-controls">
+  <script>
+  (function() {
+
+      Polymer({
+        publish: {
+          camera: null,
+          enabled: true,
+        },
+
+        cameraChanged: function() {
+
+          if (this.controls) this.controls.enabled = false;
+
+          // TODO: preserve center in EditorControls
+          this.camera._target = this.camera._target || new THREE.Vector3();
+
+          this.controls = new THREE.EditorControls(this.camera, this.parentNode.host, this.camera._target);
+          this.controls.addEventListener('change', function() {
+            this.fire('three-viewport-controls-changed');
+          }.bind(this));
+
+        },
+
+        enabledChanged: function() {
+          this.controls.enabled = this.enabled;
+        },
+
+        focusObject: function(object, frame) {
+          this.controls.focus(object, frame);
+        }
+
+      });
+  }());
+  </script>
+</polymer-element>

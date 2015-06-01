@@ -1,0 +1,203 @@
+<link rel="import" href="../polymer/polymer.html">
+<link rel="import" href="../three-js/three-js.html">
+<link rel="import" href="three-viewport.html">
+
+<!-- 
+Viewport element with basic camera controls and tool API.
+Supports rendering to 4 different camera views.
+
+three-quad-viewport uses [three-viewport](#three-viewport)
+
+@element three-quad-viewport
+@blurb Manages 4 instances of three-viewport
+ -->
+<polymer-element name="three-quad-viewport">
+  <template>
+    <link rel="stylesheet" type="text/css" href="three-quad-viewport.css">
+
+    <div id="quadContainer" fit vertical layout>
+      <div flex horizontal layout>
+        <div id="viewport0Container" flex>
+          <three-viewport id="viewport0" fit view="{{view0}}"
+              scene="{{scene}}"
+              helperScene="{{helperScene}}"
+              showHelpers="{{showHelpers}}"
+              showGrid="{{showGrid}}"
+              showAxis="{{showAxis}}"
+              gridSize="{{gridSize}}"
+              gridWidth="{{gridWidth}}"
+              gridColor1="{{gridColor1}}"
+              gridColor2="{{gridColor2}}"
+              tool="{{tool}}">
+          </three-viewport>
+        </div>
+        <div id="viewport1Container" flex>
+          <three-viewport id="viewport1" fit view="{{view1}}"
+              scene="{{scene}}"
+              helperScene="{{helperScene}}"
+              showHelpers="{{showHelpers}}"
+              showGrid="{{showGrid}}"
+              showAxis="{{showAxis}}"
+              gridSize="{{gridSize}}"
+              gridWidth="{{gridWidth}}"
+              gridColor1="{{gridColor1}}"
+              gridColor2="{{gridColor2}}"
+              tool="{{tool}}">
+          </three-viewport>
+        </div>
+      </div>
+      <div flex horizontal layout>
+        <div id="viewport2Container" flex>          
+          <three-viewport id="viewport2" fit view="{{view2}}"
+              scene="{{scene}}"
+              helperScene="{{helperScene}}"
+              showHelpers="{{showHelpers}}"
+              showGrid="{{showGrid}}"
+              showAxis="{{showAxis}}"
+              gridSize="{{gridSize}}"
+              gridWidth="{{gridWidth}}"
+              gridColor1="{{gridColor1}}"
+              gridColor2="{{gridColor2}}"
+              tool="{{tool}}">
+          </three-viewport>
+        </div>
+        <div id="viewport3Container" flex>
+          <three-viewport id="viewport3" fit view="{{view3}}"
+              scene="{{scene}}"
+              helperScene="{{helperScene}}"
+              showHelpers="{{showHelpers}}"
+              showGrid="{{showGrid}}"
+              showAxis="{{showAxis}}"
+              gridSize="{{gridSize}}"
+              gridWidth="{{gridWidth}}"
+              gridColor1="{{gridColor1}}"
+              gridColor2="{{gridColor2}}"
+              tool="{{tool}}">
+          </three-viewport>
+        </div>
+      </div>
+    </div>
+    <div id="fullscreenContainer" fit></div>
+    <io-help-message message="Viewport: <b>Click</b> and <b>drag</b> to orbit camera.
+      <b>Right-click</b> to pan or <b>middle-click</b> or <b>scroll</b> to zoom. Press <b>space</b> to enlarge viewport." preventDeeper></io-help-message>
+  </template>
+  <script type="text/javascript">
+    Polymer({
+      publish: {
+        /**
+         * Determines if all viewports should render simultaniously.
+         * @attribute renderAll
+         * @type boolean
+         * @default false
+         */
+        renderAll: false,
+        /**
+         * Default camera views
+         * Available settings: persp, top, bottom, front, back, left, right
+         * Changind this attribute will change the 'camera' attribute and grid orientation.
+         * @attribute view0
+         * @default 'persp'
+         * @attribute view1
+         * @default 'front'
+         * @attribute view2
+         * @default 'top'
+         * @attribute view3
+         * @default 'right'
+         * @type string
+         */
+        view0: 'persp',
+        view1: 'front',
+        view2: 'top',
+        view3: 'right',
+        /**
+         * three-viewport shared attributes
+         */
+        scene: null,
+        helperScene: null,
+        clearColor: null,
+        showHelpers: true,
+        showGrid: true,
+        showAxis: true,
+        gridSize: 10,
+        gridWidth: 10,
+        gridColor1: null,
+        gridColor2: null,
+        tool: null
+      },
+      eventDelegates: {
+        'keyup': 'handleKeyUp',
+        'up': 'handleUp',
+        'three-viewport-hover': 'handleViewportHover',
+        'viewport-rendered': 'handleRender'
+      },
+
+      ready: function() {
+        this._render = this.render.bind(this);
+        // Make all viewports share default cameras from viewport0;
+        this.$.viewport1.$.cameras.cameras = this.$.viewport0.$.cameras.cameras;
+        this.$.viewport2.$.cameras.cameras = this.$.viewport0.$.cameras.cameras;
+        this.$.viewport3.$.cameras.cameras = this.$.viewport0.$.cameras.cameras;
+      },
+      handleKeyUp: function(event) {
+        if (event.which == 32 && this.fullscreenTarget) {
+          this.toggleFullscreen(this.fullscreenTarget);
+        }
+      },
+      toggleFullscreen: function(viewport) {
+        if (this.fullscreenViewport) {
+          this.$.viewport0Container.appendChild(this.$.viewport0);
+          this.$.viewport1Container.appendChild(this.$.viewport1);
+          this.$.viewport2Container.appendChild(this.$.viewport2);
+          this.$.viewport3Container.appendChild(this.$.viewport3);
+          this.fullscreenViewport.focus();
+          delete this.fullscreenViewport;
+        } else {        
+          this.fullscreenViewport = viewport;
+          this.$.fullscreenContainer.appendChild(viewport);
+          setTimeout(function() {
+            this.fullscreenViewport.focus();
+          }.bind(this), 1);
+        }
+      },
+      handleViewportHover: function(event) {
+        this.fullscreenTarget = event.detail;
+      },
+      handleRender: function(event) {
+        if (this.renderAll) this.render();
+      },
+      handleUp :function(event) {
+        this.render();
+      },
+      render: function() {
+        if (this.fullscreenViewport) {
+          if (!this.fullscreenViewport.rendered) this.fullscreenViewport.render();
+        } else {
+          if (!this.$.viewport0.rendered) this.$.viewport0.render();
+          if (!this.$.viewport1.rendered) this.$.viewport1.render();
+          if (!this.$.viewport2.rendered) this.$.viewport2.render();
+          if (!this.$.viewport3.rendered) this.$.viewport3.render();
+        }
+      },
+      renderLater: function() {
+        requestAnimationFrame(this._render);
+      },
+      focusObject: function(object) {
+        if (this.fullscreenViewport) {
+          this.fullscreenViewport.focusObject(object);
+        } else {
+          this.$.viewport0.focusObject(object);
+          this.$.viewport1.focusObject(object);
+          this.$.viewport2.focusObject(object);
+          this.$.viewport3.focusObject(object);
+        }
+      },
+      setCameraStates: function(states) {
+        this.$.viewport0.setCameraStates(states);
+      },
+      getCameraStates: function() {
+        return this.$.viewport0.getCameraStates();
+      }
+
+    });
+  </script>
+</polymer-element>

@@ -1,0 +1,408 @@
+<link rel="import" href="../polymer/polymer.html">
+<link rel="import" href="../three-js/three-js.html">
+
+<link rel="import" href="../io-options/io-options.html">
+
+<link rel="import" href="../three-renderer/three-renderer.html">
+<link rel="import" href="three-viewport-camera.html">
+<link rel="import" href="three-viewport-controls.html">
+<link rel="import" href="three-viewport-helpers.html">
+
+<!--
+Three.js viewport element with basic camera controls and tool API.
+
+three-viewport uses [three-renderer](#three-renderer), [io-camera](#io-camera), [io-controls](#io-controls) and [io-helpers](#io-helpers)
+
+@element three-viewport
+@blurb Viewport element with basic camera controls and tool API
+-->
+
+<polymer-element name="three-viewport" tabindex="0" oncontextmenu="return false;">
+  <template>
+    <link rel="stylesheet" type="text/css" href="three-viewport.css">
+    <three-viewport-camera id="cameras"
+        view="{{view}}"
+        camera="{{camera}}"
+        width="{{width}}"
+        height="{{height}}"
+        on-three-viewport-camera-changed="{{renderLater}}">
+    </three-viewport-camera>
+    <three-viewport-controls id="controls"
+        camera="{{camera}}"
+        scene="{{scene}}"
+        width="{{width}}"
+        height="{{height}}"
+        viewport="{{}}"
+        enabled="{{!tool}}"
+        on-three-viewport-controls-changed="{{saveCameraStates}}">
+    </three-viewport-controls>
+    <three-viewport-helpers
+        id="helpers"
+        view="{{view}}"
+        showGrid="{{showGrid}}"
+        showAxis="{{showAxis}}"
+        gridSize="{{gridSize}}"
+        gridWidth="{{gridWidth}}"
+        gridColor1="{{gridColor1}}"
+        gridColor2="{{gridColor2}}"
+        on-helper-changed="{{renderLater}}">
+    </three-viewport-helpers>
+    <three-renderer id="renderer"
+        clearColor="{{background}}"
+        autoClear="false"
+        autoClearColor="true"
+        autoClearDepth="true"
+        autoClearStencil="true"
+        width="{{width}}"
+        height="{{height}}">
+    </three-renderer>
+    <io-options id="viewoption" value="{{view}}" options="{{viewOptions}}"></io-options>
+    <div id="outline"></div>
+  </template>
+  <script type="text/javascript">
+
+    (function() {
+
+      var viewportEvents = [
+        'Down',
+        'Up',
+        'TrackStart',
+        'Track',
+        'TrackEnd',
+        'Tap',
+        'MouseDown',
+        'MouseMove',
+        'MouseUp',
+        'MouseOut',
+        'KeyDown',
+        'KeyUp',
+        'MouseWheel', // DOMMouseScroll? // TODO
+        'TouchStart',
+        'TouchMove'
+      ];
+      var faceKeys = ['a', 'b', 'c'];
+
+      var COMPASS_SIZE = 64;
+
+      // temporary variables
+      var x, y, intersects, intersect;
+      var pointerVector = new THREE.Vector2();
+      var shortestDistance, closestVert, distance, tempVert;
+      var raycaster = new THREE.Raycaster();
+
+      Polymer({
+        publish: {
+          /**
+           * Scene to be rendered in this viewport.
+           * @attribute scene
+           * @type object
+           * @default new THREE.Scene()
+           */
+          scene: null,
+          /**
+           * Scene helpers to be rendered in this viewport.
+           * @attribute helperScene
+           * @type object
+           * @default new THREE.Scene()
+           */
+          helperScene: null,
+          /**
+           * Camera to be rendered with.
+           * Any instance of `THREE.Camera` can be set here.
+           * @attribute camera
+           * @type object
+           */
+          camera: null,
+          /**
+           * Background color
+           * @attribute background
+           * @type object
+           * @default new THREE.Color(0xCCCCCC)
+           */
+          background: null,
+          /**
+           * Default camera views
+           * Available settings: persp, top, bottom, front, back, left, right
+           * Changind this attribute will change the 'camera' attribute and grid orientation.
+           * @attribute view
+           * @type string
+           * @default 'persp'
+           */
+          view: 'persp',
+
+          /**
+           * Determines if scene helpers are rendered.
+           * @attribute showHelpers
+           * @type boolean
+           * @default true
+           */
+          showHelpers: true,
+          /**
+           * Tool to recieve pointer event callbacks from this element.
+           * @attribute tool
+           * @type element
+           */
+          tool: null,
+          /**
+           * Map of camera states.
+           * @attribute cameraStates
+           * @type object
+           * @default null
+           */
+          cameraStates: null,
+          /**
+           * three-viewport-helpers attributes
+           * See three-viewport-helpers for documentation
+           */
+          showGrid: true,
+          showAxis: true,
+          gridSize: 10,
+          gridWidth: 10,
+          gridColor1: null,
+          gridColor2: null,
+
+          // Optional functions to be run before and after render step
+          preRender: null,
+          postRender: null
+        },
+
+        observe: {
+          'background': 'renderLater',
+          'showHelpers': 'renderLater'
+        },
+
+        eventDelegates: {
+          'three-renderer-resized': 'renderLater',
+          'focus': 'renderLater',
+          'mousemove': 'handleMouseMove'
+        },
+
+        rendered: false,
+        width: 0,
+        height: 0,
+        pointerHandlers: null,
+
+        altKey: null,
+        ctrlKey: null,
+
+        view: 'persp',
+        viewOptions: ['persp', 'top', 'bottom', 'front', 'back', 'left', 'right'],
+
+        ready: function() {
+          this._render = this.render.bind(this);
+          this._addRaycastDataToEvent = this.addRaycastDataToEvent.bind(this);
+          this.pointerHandlers = {};
+          if (!this.scene) this.scene = new THREE.Scene();
+          if (!this.helperScene) this.helperScene = new THREE.Scene();
+          if (!this.gridColor1) this.gridColor1 = new THREE.Color(0xC5CDCC);
+          if (!this.gridColor2) this.gridColor2 = new THREE.Color(0xC5CDCC);
+        },
+
+        attached: function() {
+          this.isAttached = true;
+          this._resizeHandler = this.resizeHandler.bind(this);
+          this._resizeHandler();
+          this.addListeners();
+        },
+        detached: function() {
+          this.isAttached = false;
+          this.removeListeners();
+        },
+        resizeHandler: function(event) {
+          if (!this.isAttached) return;
+          requestAnimationFrame(this._resizeHandler);
+          this._rect = this.getBoundingClientRect();
+          this.width = Math.floor(this._rect.width);
+          this.height = Math.floor(this._rect.height);
+        },
+
+        render: function() {
+          if (!this.rendered) {
+            if (this.preRender) this.preRender();
+            this.$.renderer.clear();
+            this.camera.updateProjectionMatrix();
+            this.$.renderer.render(this.scene, this.camera);
+            if (this.showHelpers) {
+              this.$.renderer.render(this.$.helpers.scene, this.camera);
+              this.$.renderer.render(this.helperScene, this.camera);
+              this.renderCompass();
+            }
+            this.rendered = true;
+            if (this.postRender) this.postRender();
+            requestAnimationFrame(function() {this.rendered = false;}.bind(this));
+            this.fire('viewport-rendered', this);
+          }
+        },
+        renderCompass: function() {
+          this.$.renderer.setViewport(0, 0, COMPASS_SIZE, COMPASS_SIZE);
+          this.$.helpers.compass.update(this.camera);
+          this.$.renderer.render(this.$.helpers.compass.scene, this.$.helpers.compass.camera);
+          this.$.renderer.setViewport(0, 0, this._rect.width, this._rect.height);
+        },
+        renderLater: function() {
+          requestAnimationFrame(this._render);
+        },
+
+        addListeners: function() {
+          var scope = this;
+          for (var i = viewportEvents.length; i--;) {
+            (function(i) {
+              var eventName = viewportEvents[i].toLowerCase();
+              scope.pointerHandlers[eventName] = function(event) {
+
+                if (event.path[0] !== scope) return;
+
+                // Use controls if alt is pressed or no tool is set.                
+                if (event.altKey !== undefined) scope.altKey = event.altKey;
+
+                var callbackName = 'on' + viewportEvents[i];
+
+                // For each event, we check if corresponding event handler exist in attached tool.
+                // If the tool is attached and has the event handler, we pass event data to it.
+                // Otherwise, we send the data to camera controls (also when alt key is pressed).
+                if (scope.altKey || !scope.tool) {
+                  if (typeof(scope.$.controls[callbackName]) == 'function') {
+                    scope.$.controls[callbackName](event);
+                  }
+                } else if (scope.tool) {
+                  if (typeof(scope.tool[callbackName]) == 'function') {
+                    if (eventName.search("key") !== -1) {
+                      // Skipping raycasting step for key events.
+                      // Consider preventing only select keys such as backspace.
+                      event.preventDefault();
+                    } else {
+                      scope._addRaycastDataToEvent(event);
+                    }
+                    scope.tool[callbackName](event);
+                    scope.renderLater();
+                  }
+                }
+              };
+              PolymerGestures.addEventListener(scope, eventName, scope.pointerHandlers[eventName]);
+            })(i);
+          }
+        },
+        removeListeners: function() {
+          var scope = this;
+          for (var i = viewportEvents.length; i--;) {
+            (function(i) {
+              var eventName = viewportEvents[i].toLowerCase();
+              PolymerGestures.removeEventListener(scope, eventName, scope.pointerHandlers[eventName]);
+              delete scope.pointerHandlers[eventName];
+            })(i);
+          }
+        },
+        /**
+         * @method addRaycastDataToEvent
+         * @param {Object} event Pointer event
+         * Adds followind data to event:
+         *
+         * event.pointerVector {Object} THREE.Vector2 pointer position in view space
+         * event.pointOnPlane {Object} THREE.Vector3 point on grid (snaps to grid if shift key is pressed)
+         * event.pointOnMesh {Object} THREE.Vector3 point on mesh (snaps to vertex if shift key is pressed)
+         * event.object {Object} THREE.Object3D closest intersected object
+         */
+        addRaycastDataToEvent: function(event) {
+          x = (event.clientX !== undefined) ? event.clientX : event.x;
+          y = (event.clientY !== undefined) ? event.clientY : event.y;
+          x = (x - this._rect.left) / this._rect.width * 2 - 1;
+          y = - (y - this._rect.top) / this._rect.height * 2 + 1;
+          pointerVector.set(x, y);
+          event.pointerVector = pointerVector;
+          raycaster.setFromCamera(pointerVector, this.camera);
+
+          // Get point on plane
+          intersects = raycaster.intersectObjects([this.$.helpers.plane], true);
+          if (intersects.length) {
+            if (event.shiftKey) {
+              intersects[0].point.x = Math.round(intersects[0].point.x / this.gridSize) * this.gridSize;
+              intersects[0].point.y = Math.round(intersects[0].point.y / this.gridSize) * this.gridSize;
+              intersects[0].point.z = Math.round(intersects[0].point.z / this.gridSize) * this.gridSize;
+              if (intersects[0].point.x == -0) intersects[0].point.x = 0; 
+              if (intersects[0].point.y == -0) intersects[0].point.y = 0; 
+              if (intersects[0].point.z == -0) intersects[0].point.z = 0; 
+            }
+            event.pointOnPlane = intersects[0].point;
+          }
+
+          // Get point on mesh
+          intersect = undefined;
+          intersects = raycaster.intersectObjects([this.scene], true);
+          intersects.some(function(i) {
+            if (i.object.visible) {
+              intersect = i; return;
+            }
+          });
+
+          if (intersect) {
+            event.pointOnMesh = intersect.point;
+            event.object = intersect.object;
+            // TODO: implement helpers
+            shortestDistance = Infinity;
+            closestVert = undefined;
+            distance = undefined;
+            // TODO: track no modifier keys
+            if (event.shiftKey) {
+              faceKeys.forEach(function(faceKey) {
+                if (intersect.object.geometry instanceof THREE.Geometry) {
+                  tempVert = intersect.object.geometry.vertices[intersect.face[faceKey]].clone()
+                } else if (intersect.object.geometry instanceof THREE.BufferGeometry) {
+                  // TODO: use array buffer for lookup?
+                  tempVert = new THREE.Vector3(
+                    intersect.object.geometry.attributes.position.array[intersect.face[faceKey] * 3],
+                    intersect.object.geometry.attributes.position.array[intersect.face[faceKey] * 3 + 1],
+                    intersect.object.geometry.attributes.position.array[intersect.face[faceKey] * 3 + 2]
+                  );
+                }
+                tempVert.applyMatrix4(event.object.matrixWorld);
+                distance = tempVert.distanceTo(event.pointOnMesh);
+                if (distance < shortestDistance) {
+                  shortestDistance = distance;
+                  closestVert = tempVert;
+                }
+              });
+              event.pointOnMesh = closestVert;
+            }
+          }
+
+          event.point = event.pointOnMesh || event.pointOnPlane;
+
+        },
+
+        focusObject: function(object) {
+          if (!object) return;
+          requestAnimationFrame(function() {
+              object.updateMatrixWorld();
+              this.$.controls.focusObject(object, true);
+              this.renderLater();
+          }.bind(this));
+        },
+
+        saveCameraStates: function() {
+          this.cameraStates = {};
+          for (var view in this.$.cameras.cameras) {
+            var camera = this.$.cameras.cameras[view];
+            this.cameraStates[view] = {
+              px: camera.position.x,
+              py: camera.position.y,
+              pz: camera.position.z,
+              rx: camera.rotation.x,
+              ry: camera.rotation.y,
+              rz: camera.rotation.z,
+              tx: camera._target.x,
+              ty: camera._target.y,
+              tz: camera._target.z
+            };
+          }
+          this.renderLater();
+        },
+
+        handleMouseMove: function(event) {
+          this.fire('three-viewport-hover', this);
+        }
+
+      });
+
+    })();
+  </script>
+</polymer-element>
