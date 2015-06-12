@@ -1,6 +1,6 @@
 {
   "name": "three-viewport",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "homepage": "https://github.com/arodic/three-viewport",
   "authors": [
     "Aleksandar Rodic <aleksandar.xyz@gmail.com>"
@@ -11,10 +11,13 @@
     "threejs", "three", "three.js", "3d", "viewport", "webgl", "io", "ui", "polymer", "element", "web-components"
   ],
   "license": "MIT",
+  "ignore": [
+    "**/.*"
+  ],
   "dependencies": {
-    "polymer": "Polymer/polymer#~0.5.6",
-    "three-js": "arodic/three-js#~0.5.1",
-    "three-renderer": "arodic/three-renderer#~0.5.1",
-    "io-options": "arodic/io-options#~0.9.7"
+    "polymer": "Polymer/polymer#~0.5.4",
+    "three-js": "arodic/three-js#~0.5.2",
+    "three-renderer": "arodic/three-renderer#~0.5.2",
+    "io-options": "arodic/io-options#~0.9.8"
   }
 }
